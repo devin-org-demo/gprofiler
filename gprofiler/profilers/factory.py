@@ -3,11 +3,14 @@ from typing import TYPE_CHECKING, Any, List, Tuple, Union, cast
 
 from gprofiler.log import get_logger_adapter
 from gprofiler.metadata.system_metadata import get_arch
-from gprofiler.platform import is_windows
+from gprofiler.platform import is_linux, is_windows
 from gprofiler.profilers.perf import SystemProfiler
 from gprofiler.profilers.profiler_base import NoopProfiler
 from gprofiler.profilers.registry import get_profilers_registry
 from gprofiler.utils import is_profiler_disabled
+
+if is_linux():
+    from gprofiler.utils.capabilities import has_sys_ptrace_capability
 
 if TYPE_CHECKING:
     from gprofiler.gprofiler_types import UserArgs
@@ -24,6 +27,7 @@ def get_profilers(
     profiling_mode = user_args.get("profiling_mode")
     process_profilers_instances: List["ProcessProfilerBase"] = []
     system_profiler: Union["SystemProfiler", "NoopProfiler"] = NoopProfiler()
+    rootless = user_args.get("rootless", False)
 
     if profiling_mode != "none":
         arch = get_arch()
@@ -32,6 +36,15 @@ def get_profilers(
             profiler_mode = user_args.get(f"{lower_profiler_name}_mode")
             if is_profiler_disabled(cast(str, profiler_mode)):
                 continue
+
+            if rootless and lower_profiler_name == "java" and is_linux():
+                if not has_sys_ptrace_capability():
+                    logger.warning(
+                        "Java profiling in rootless mode requires SYS_PTRACE capability. "
+                        "Java profiler will be disabled. To enable Java profiling, run with SYS_PTRACE capability "
+                        "or disable Java profiling with --no-java."
+                    )
+                    continue
 
             supported_archs = (
                 profiler_config.supported_windows_archs if is_windows() else profiler_config.supported_archs

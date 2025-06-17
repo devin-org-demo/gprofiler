@@ -774,12 +774,23 @@ class AsyncProfiledProcess:
             elif e.stderr == "Could not start attach mechanism: No such file or directory\n":
                 # this is true for jattach_hotspot
                 raise JattachSocketMissingException(*args) from None
+            elif "Operation not permitted" in e.stderr:
+                from gprofiler.log import get_logger_adapter
+                privilege_logger = get_logger_adapter(__name__)
+                privilege_logger.warning(
+                    f"Java profiling attachment failed for process {self.process.pid} with 'Operation not permitted'. "
+                    "This may be due to insufficient privileges in rootless mode. Ensure SYS_PTRACE capability is available "
+                    "or the target process is owned by the current user."
+                )
+                raise JattachException(*args) from None
             else:
                 raise JattachException(*args) from None
         else:
             ap_log = self._read_ap_log()
             ap_log_stripped = _MEM_INFO_LOG_RE.sub("", ap_log)  # strip out mem info log only when for gProfiler log
-            logger.debug("async-profiler log", jattach_cmd=cmd, ap_log=ap_log_stripped)
+            from gprofiler.log import get_logger_adapter
+            debug_logger = get_logger_adapter(__name__)
+            debug_logger.debug("async-profiler log", jattach_cmd=cmd, ap_log=ap_log_stripped)
             return ap_log
 
     def _run_fdtransfer(self) -> None:

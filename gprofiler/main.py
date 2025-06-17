@@ -82,6 +82,9 @@ if is_linux():
     from gprofiler.utils.linux import disable_core_files
 
 
+from gprofiler.utils.capabilities import has_sys_ptrace_capability
+
+
 logger: logging.LoggerAdapter
 
 DEFAULT_LOG_FILE = "/var/log/gprofiler/gprofiler.log" if is_linux() else "./gprofiler.log"
@@ -964,6 +967,16 @@ def verify_preconditions(args: configargparse.Namespace, processes_to_profile: O
             file=sys.stderr,
         )
         sys.exit(1)
+    
+    if args.rootless and hasattr(args, 'java_mode') and args.java_mode != "disabled":
+        if not has_sys_ptrace_capability():
+            from gprofiler.log import get_logger_adapter
+            logger = get_logger_adapter(__name__)
+            logger.warning(
+                "Java profiling in rootless mode requires SYS_PTRACE capability. "
+                "Java profiler may fail to attach to processes. To enable Java profiling, "
+                "run with SYS_PTRACE capability or disable Java profiling with --no-java."
+            )
 
     if args.pid_ns_check and not is_running_in_init_pid():
         print(
