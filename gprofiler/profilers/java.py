@@ -512,6 +512,7 @@ class AsyncProfiledProcess:
         ap_safemode: int,
         ap_features: List[str],
         ap_args: str,
+        rootless: bool = False,
         jattach_timeout: int = _DEFAULT_JATTACH_TIMEOUT,
         mcache: int = 0,
         collect_meminfo: bool = True,
@@ -520,6 +521,7 @@ class AsyncProfiledProcess:
     ):
         self.process = process
         self._profiler_state = profiler_state
+        self._rootless = rootless
         # access the process' root via its topmost parent/ancestor which uses the same mount namespace.
         # this allows us to access the files after the process exits:
         # * for processes that run in host mount NS - their ancestor is always available (it's going to be PID 1)
@@ -576,18 +578,21 @@ class AsyncProfiledProcess:
         This function creates the gprofiler_tmp directory as a directory owned by root, if it doesn't exist under the
         chosen rwx directory.
         It does not create the parent directory itself, if it doesn't exist (e.g /run).
-        The chosen rwx directory needs to be owned by root.
+        The chosen rwx directory needs to be owned by root, unless running in rootless mode.
         """
         for d in POSSIBLE_AP_DIRS:
             full_dir = Path(resolve_proc_root_links(self._process_root, d))
             if not full_dir.parent.exists():
                 continue  # we do not create the parent.
 
-            if not is_owned_by_root(full_dir.parent):
-                continue  # the parent needs to be owned by root
+            if not self._rootless and not is_owned_by_root(full_dir.parent):
+                continue  # the parent needs to be owned by root when not in rootless mode
 
             try:
-                mkdir_owned_root(full_dir)
+                if self._rootless:
+                    full_dir.mkdir(parents=False, exist_ok=True)
+                else:
+                    mkdir_owned_root(full_dir)
             except OSError as e:
                 # dir is not r/w, try next one
                 if e.errno == errno.EROFS:
@@ -1007,6 +1012,7 @@ class JavaProfiler(SpawningProcessProfilerBase):
         java_full_hserr: bool,
         java_include_method_modifiers: bool,
         java_line_numbers: str,
+        rootless: bool = False,
     ):
         assert java_mode == "ap", "Java profiler should not be initialized, wrong java_mode value given"
         super().__init__(frequency, duration, profiler_state)
@@ -1048,6 +1054,7 @@ class JavaProfiler(SpawningProcessProfilerBase):
         self._java_full_hserr = java_full_hserr
         self._include_method_modifiers = java_include_method_modifiers
         self._java_line_numbers = java_line_numbers
+        self._rootless = rootless
 
     def _init_ap_mode(self, profiling_mode: str, ap_mode: str) -> None:
         assert profiling_mode in ("cpu", "allocation"), "async-profiler support only cpu/allocation profiling modes"
@@ -1055,8 +1062,12 @@ class JavaProfiler(SpawningProcessProfilerBase):
             ap_mode = "alloc"
 
         elif ap_mode == "auto":
-            ap_mode = "cpu" if can_i_use_perf_events() else "itimer"
-            logger.debug("Auto selected AP mode", ap_mode=ap_mode)
+            if self._rootless:
+                ap_mode = "itimer"
+                logger.debug("Auto selected AP mode for rootless", ap_mode=ap_mode)
+            else:
+                ap_mode = "cpu" if can_i_use_perf_events() else "itimer"
+                logger.debug("Auto selected AP mode", ap_mode=ap_mode)
 
         assert ap_mode in SUPPORTED_AP_MODES, f"unexpected ap mode: {ap_mode}"
         self._mode = ap_mode
@@ -1280,6 +1291,7 @@ class JavaProfiler(SpawningProcessProfilerBase):
             self._ap_safemode,
             self._ap_features,
             self._ap_args,
+            self._rootless,
             self._jattach_timeout,
             self._ap_mcache,
             self._report_meminfo,

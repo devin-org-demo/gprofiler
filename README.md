@@ -114,7 +114,7 @@ Make sure you are not passing `-s` to the `-ldflags` during your build - `-s` om
 ## Rootless mode
 gProfiler can be run in rootless mode, profiling without root or sudo access with limited functionality by using the `--rootless` argument.
 
-Profiling is limited to perf (not java, python, ruby, etc.), and requires passing `--pids` with a list of processes owned by the current user.
+Profiling supports perf and Java profiling (using itimer mode), and requires passing `--pids` with a list of processes owned by the current user. Other profilers (python, ruby, etc.) are not supported in rootless mode.
 
 If the default directories for the log file and pid file (e.g., `/var/log or /var/run`) are not writable by the current user, these must be explicitly directed to a writable path with `--log-file {LOG_FILE}` and `--pid-file {PID_FILE}` respectively. If gProfiler was run previously as root or with sudo, it will create the temporary directory `gprofiler_tmp` in the default location (usually `/tmp`) or wherever specified. If gProfiler is run again with `--rootless`, it will fail to run as it will be trying to write to the `gprofiler_tmp` directory which has already been created by `root` user. Delete this root owned directory or redirect to a different (user writable) directory and re-run with `--rootless`.
 
